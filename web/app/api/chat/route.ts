@@ -64,6 +64,9 @@ export async function POST(req: Request) {
     providerOptions: {
       geniex: { enable_think: false },
     },
+    // Keeps this under maxDuration so a hung GenieX call surfaces as an
+    // error the client can show, instead of an indefinite freeze.
+    abortSignal: AbortSignal.timeout(55000),
     // Two independent layers, run for every tool call regardless of the
     // static risk tier - a step doesn't get to skip review just because
     // it's labeled SAFE in risk-registry.ts:
@@ -112,8 +115,13 @@ export async function POST(req: Request) {
     // Considerations note in the SignalGuard README section. Optional: if
     // TOOL_APPROVAL_SECRET is unset, approvals still work, just unsigned.
     experimental_toolApprovalSecret: process.env.TOOL_APPROVAL_SECRET,
-    onEnd: async () => {
-      await mcpClient.close();
+    // Deliberately NOT awaited: this runs on every single request, and an
+    // awaited close() that hangs or throws would block the stream from ever
+    // finishing - freezing the chat input after exactly one prompt, every
+    // time. Best-effort cleanup only; never lets closing the MCP connection
+    // hold up the response the user is actually waiting on.
+    onEnd: () => {
+      mcpClient.close().catch(() => {});
     },
   });
 

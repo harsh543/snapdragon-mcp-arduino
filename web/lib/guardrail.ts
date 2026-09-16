@@ -52,6 +52,11 @@ export async function assessGuardrail(
       providerOptions: {
         geniex: { enable_think: false, enable_json: true },
       },
+      // Without this, a slow/unresponsive GenieX (NPU busy, tunnel hiccup)
+      // hangs this call forever, which hangs the whole tool-approval flow
+      // and freezes the chat with no error ever surfacing. Matches the
+      // fail-closed timeout=5.0 already used in x_elite/guardrail.py.
+      abortSignal: AbortSignal.timeout(8000),
     });
 
     const result = JSON.parse(text) as Partial<GuardrailCheck>;

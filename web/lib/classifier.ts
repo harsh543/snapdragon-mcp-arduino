@@ -56,6 +56,10 @@ export async function classifyToolCall(
       providerOptions: {
         geniex: { enable_think: false, enable_json: true },
       },
+      // See the matching note in guardrail.ts - without this, an
+      // unresponsive GenieX hangs the whole tool-approval flow forever
+      // instead of failing closed to SUSPICIOUS.
+      abortSignal: AbortSignal.timeout(8000),
     });
 
     const result = JSON.parse(text) as Partial<ClassifierVerdict>;
