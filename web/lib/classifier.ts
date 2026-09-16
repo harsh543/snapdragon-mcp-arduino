@@ -71,7 +71,11 @@ export async function classifyToolCall(
       throw new Error('malformed classifier response');
     }
     return { verdict: result.verdict, reason: result.reason ?? '' };
-  } catch {
+  } catch (err) {
+    // Was silently swallowed - this made a genuinely broken classifier
+    // (e.g. CLASSIFIER_MODEL never pulled) indistinguishable from working
+    // fail-closed behavior. Always log so a persistent failure is visible.
+    console.error('[classifier] falling back to SUSPICIOUS:', err);
     return fallback(toolName);
   }
 }

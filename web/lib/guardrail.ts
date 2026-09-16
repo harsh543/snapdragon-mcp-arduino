@@ -71,7 +71,8 @@ export async function assessGuardrail(
       ambiguous: result.ambiguous,
       ambiguity_reason: result.ambiguity_reason ?? '',
     };
-  } catch {
+  } catch (err) {
+    console.error('[guardrail] falling back to ambiguous=true:', err);
     return fallback(toolName, toolArgs);
   }
 }
