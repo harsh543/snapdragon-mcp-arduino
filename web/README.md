@@ -17,20 +17,23 @@ public tunnel.
 
 ## Why two tunnels, not one
 
+Both services run on the **same Windows Snapdragon X Elite machine** - no
+Arduino Uno Q, no ADB. They're still two independent processes on two
+different ports, so each needs its own tunnel:
+
 - **GenieX** (`geniex serve`, port 18181) - the model backend for chat and
   for the guardrail's own ambiguity check.
-- **FastMCP** (`python -m arduino.unoq.mcp_server`, ADB-forwarded to port
-  3001 on the Snapdragon machine) - where `get_board_status`, `flash_heart`,
-  and `trigger_alert` actually execute.
-
-These are two independent services on the same machine; each needs its own
-tunnel.
+- **`x_elite/mcp_server.py`** (port 3001) - a standalone MCP server with
+  simulated tool responses (`get_board_status`, `flash_heart`,
+  `trigger_alert`). No hardware required; see the main
+  [README](../README.md#running-the-mcp-server-standalone-no-arduino) for
+  how to run it.
 
 ## Setup
 
-1. On the Snapdragon X Elite, with `geniex serve` and the ADB port-forward
-   both already running (see the main [README](../README.md)), start two
-   tunnels, e.g. with `ngrok`:
+1. On the Snapdragon X Elite, with `geniex serve` and
+   `python -m x_elite.mcp_server` both already running, start two tunnels,
+   e.g. with `ngrok`:
 
    ```powershell
    ngrok http 18181

@@ -229,6 +229,33 @@ Optional settings:
 .\.venv\Scripts\python -m x_elite.client --help
 ```
 
+## Running the MCP server standalone (no Arduino)
+
+No Uno Q, or don't want the hardware dependency for a demo? Skip steps 2-5
+above entirely. `x_elite/mcp_server.py` runs the same three tools
+(`get_board_status`, `flash_heart`, `trigger_alert`) as a standalone MCP
+server directly on the Windows Snapdragon X Elite machine - no ADB, no
+Arduino sketch, no `Arduino_RouterBridge`. Tool responses are simulated
+(printed to the console) rather than driving real hardware.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r x_elite/requirements.txt
+.\.venv\Scripts\python -m x_elite.mcp_server
+```
+
+This listens on `127.0.0.1:3001/mcp`, same port and path as the
+ADB-forwarded Uno Q server, so `x_elite/client.py`'s defaults
+(`--mcp-url http://127.0.0.1:3001/mcp`) work unchanged - point it at
+whichever server is actually running. The web chat app
+([`web/README.md`](web/README.md)) uses this standalone server too, tunneled
+alongside GenieX rather than going through ADB.
+
+Since `x_elite/risk_registry.py` and `x_elite/guardrail.py` key off tool
+*names*, not which server implements them, SignalGuard's guardrail behavior
+is identical either way - only whether `trigger_alert` does something
+physical or just prints a line changes.
+
 ## Troubleshooting
 
 - **Cannot connect to MCP:** confirm the FastMCP process is running, then run
