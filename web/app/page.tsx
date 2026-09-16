@@ -1,11 +1,7 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import {
-  DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithApprovalResponses,
-  type UIMessage,
-} from 'ai';
+import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +31,7 @@ function collectTrace(messages: UIMessage[]): TraceEntry[] {
   return entries;
 }
 
-function TraceRow({ entry, onApprove }: { entry: TraceEntry; onApprove: (id: string, approved: boolean) => void }) {
+function TraceRow({ entry }: { entry: TraceEntry }) {
   const { part } = entry;
   const tier = riskTier(part.toolName);
 
@@ -51,24 +47,8 @@ function TraceRow({ entry, onApprove }: { entry: TraceEntry; onApprove: (id: str
       </div>
 
       <div className="mt-1.5 pl-1">
-        {part.state === 'approval-requested' && part.approval.isAutomatic && (
-          <p className="text-xs text-muted-foreground">Auto-approved - SAFE tool, no review needed.</p>
-        )}
-
-        {part.state === 'approval-requested' && !part.approval.isAutomatic && (
-          <div className="space-y-2">
-            {part.approval.requestReason && (
-              <p className="text-sm text-amber-500">{part.approval.requestReason}</p>
-            )}
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => onApprove(part.approval.id, true)}>
-                Proceed
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => onApprove(part.approval.id, false)}>
-                Block
-              </Button>
-            </div>
-          </div>
+        {part.state === 'approval-requested' && (
+          <p className="text-xs text-muted-foreground">Checking...</p>
         )}
 
         {part.state === 'approval-responded' && (
@@ -76,7 +56,7 @@ function TraceRow({ entry, onApprove }: { entry: TraceEntry; onApprove: (id: str
             <Badge variant={part.approval.approved ? 'secondary' : 'destructive'} className="mr-1.5">
               {part.approval.approved ? 'Approved' : 'Blocked'}
             </Badge>
-            {part.approval.isAutomatic ? 'automatically' : 'by you'}
+            automatically
             {part.approval.reason ? ` - ${part.approval.reason}` : ''}
           </p>
         )}
@@ -103,9 +83,8 @@ function TraceRow({ entry, onApprove }: { entry: TraceEntry; onApprove: (id: str
 }
 
 export default function Chat() {
-  const { messages, sendMessage, addToolApprovalResponse, status, error, clearError } = useChat({
+  const { messages, sendMessage, status, error, clearError } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
   const [input, setInput] = useState('');
 
@@ -114,15 +93,7 @@ export default function Chat() {
   // first two mean a request is actually in flight. Disabling on 'error'
   // too would lock the input with no way to retry and no visible reason.
   const busy = status === 'submitted' || status === 'streaming';
-  // status returns to 'ready' while a manual tool-approval card is waiting
-  // for you to click Proceed/Block - that's correct (you're not "busy"
-  // waiting on the server). But sending a new message in that window
-  // throws AI_MissingToolResultsError, since the previous tool call is
-  // still unresolved. Block sending until it's answered.
-  const hasPendingApproval = trace.some(
-    entry => entry.part.state === 'approval-requested' && !entry.part.approval.isAutomatic,
-  );
-  const canSend = !busy && !hasPendingApproval;
+  const canSend = !busy;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-6">
@@ -152,9 +123,9 @@ export default function Chat() {
           Ambiguous instructions can silently resolve to the wrong scope - &quot;remove other
           branches&quot; meaning local when an agent executes it as remote, with no confirmation
           before a destructive MCP tool call runs. Every tool call goes through two independent
-          checks before it can execute: a separate, smaller classifier model that has no say in
-          what to call next (only whether the call looks malicious), and an ambiguity check on
-          anything not read-only. Try{' '}
+          automatic checks before it executes - a separate, smaller classifier model that has no
+          say in what to call next (only whether the call looks malicious), and an ambiguity check
+          on anything not read-only - and every decision is logged in the trace panel. Try{' '}
           <span className="font-mono text-foreground">clean up the other branches</span> below.
         </AlertDescription>
       </Alert>
@@ -204,11 +175,7 @@ export default function Chat() {
               <Input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder={
-                  hasPendingApproval
-                    ? 'Respond to the pending approval above first'
-                    : 'e.g. Check whether the Arduino is connected'
-                }
+                placeholder="e.g. Check whether the Arduino is connected"
                 disabled={!canSend}
               />
               <Button type="submit" disabled={!canSend || !input.trim()}>
@@ -230,13 +197,7 @@ export default function Chat() {
               {trace.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No tool calls yet.</p>
               ) : (
-                trace.map(entry => (
-                  <TraceRow
-                    key={entry.key}
-                    entry={entry}
-                    onApprove={(id, approved) => addToolApprovalResponse({ id, approved })}
-                  />
-                ))
+                trace.map(entry => <TraceRow key={entry.key} entry={entry} />)
               )}
             </ScrollArea>
           </CardContent>

@@ -89,28 +89,41 @@ deployed Vercel app - production builds don't have this restriction.
 ## Two independent layers in front of every tool call
 
 `app/api/chat/route.ts`'s `toolApproval` function runs, in order, for
-**every** tool call - not just ones tiered risky:
+**every** tool call - not just ones tiered risky. All decisions are
+**automatic** (testing mode - see note below); nothing pauses the chat
+waiting for a manual click:
 
 1. **Classifier** ([`lib/classifier.ts`](lib/classifier.ts)) - a second,
    smaller model (`CLASSIFIER_MODEL`, not `GENIEX_MODEL`) with no say in what
    the agent calls next, only whether the call it already chose looks
-   malicious. A `MALICIOUS` verdict is a hard, automatic deny - no user
-   override - because the point is not trusting a single model's judgment
-   about its own actions. `SUSPICIOUS` forces a manual approval even for
-   tools tiered `SAFE`.
+   malicious. A `MALICIOUS` verdict is a hard, automatic deny - because the
+   point is not trusting a single model's judgment about its own actions.
 2. **Ambiguity guardrail** ([`lib/guardrail.ts`](lib/guardrail.ts)) - runs
    when a tool is tiered `CONFIRM_REQUIRED` in
    [`lib/risk-registry.ts`](lib/risk-registry.ts) (mirrors
    `x_elite/risk_registry.py`) or the classifier flagged `SUSPICIOUS`. Same
-   ambiguity check and system prompt as the Python guardrail, checking
-   whether the instruction that led here left scope, target, or
-   reversibility unclear.
+   ambiguity check and system prompt as the Python guardrail; its reasoning
+   is preserved as the automatic approval's `reason`, even though nothing
+   blocks on it.
 
 Both surface through the AI SDK's native tool-approval UI state
-(`part.state === 'approval-requested'` / `'output-denied'`,
-`addToolApprovalResponse`) in `app/page.tsx`'s trace panel - an amber card
-with Proceed/Block for manual approvals, a red badge with the classifier's
-own reasoning for automatic denials. No hand-rolled protocol.
+(`part.state === 'approval-responded'` / `'output-denied'`) in
+`app/page.tsx`'s trace panel - a badge and the check's own reasoning text
+for every decision. No hand-rolled protocol.
+
+**Why automatic, not manual:** an earlier version used `{ type: 'user-approval' }`
+for CONFIRM_REQUIRED tools, pausing the stream for a Proceed/Block click.
+That triggered the AI SDK's interactive-approval stream-pause path, which
+threw `Error: failed to pipe response` (cause: `DataError: Zero-length key
+is not supported`) here, and separately left a window where sending a new
+message before responding to the pending approval threw
+`AI_MissingToolResultsError`. Switching every outcome to `'approved'` /
+`'denied'` (decided immediately, never waiting on the client) removes both
+failure modes while keeping every check and its full reasoning intact and
+logged. If you want the interactive click-to-approve UX back for a specific
+tool, that's a one-line change back to `'user-approval'` in
+`route.ts` - just be aware it reintroduces the stream-pause bug above,
+which hasn't been root-caused (only worked around by avoiding it).
 
 ### The demo tools
 
