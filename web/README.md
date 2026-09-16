@@ -1,14 +1,16 @@
 # SignalGuard web chat
 
 A Next.js chat UI, deployed on Vercel, that talks to Qwen3 running locally on
-a Snapdragon X Elite via GenieX, and calls tools on the Arduino Uno Q through
-MCP - the same SignalGuard safety gate as the CLI client in
-[`../x_elite/client.py`](../x_elite/client.py), but the ambiguity/blast-radius
-flag is a visible approval card in the browser instead of a terminal prompt.
+a Snapdragon X Elite via GenieX, and calls tools on
+[`x_elite/mcp_server.py`](../x_elite/mcp_server.py) through MCP - the same
+SignalGuard safety gate as the CLI client in
+[`../x_elite/client.py`](../x_elite/client.py), but with a persistent trace
+panel and two independent checks in front of every tool call instead of a
+single terminal prompt.
 
 ```text
 Browser (Vercel) -> Next.js API route -> tunnel -> GenieX (Snapdragon X Elite)
-                                       -> tunnel -> FastMCP (Arduino Uno Q, via ADB forward)
+                                       -> tunnel -> x_elite/mcp_server.py (same machine)
 ```
 
 Because this route runs on Vercel's servers, not on your Snapdragon machine,
@@ -51,6 +53,7 @@ different ports, so each needs its own tunnel:
    vercel env add GENIEX_URL production
    vercel env add MCP_URL production
    vercel env add GENIEX_MODEL production   # e.g. qualcomm/Qwen3-4B-Instruct-2507
+   vercel env add CLASSIFIER_MODEL production   # e.g. ai-hub-models/Qwen3-0.6B
    vercel env add TOOL_APPROVAL_SECRET production   # openssl rand -base64 32
    ```
 
@@ -83,19 +86,50 @@ against DNS rebinding, not a bug. `next.config.ts` already allowlists
 domain there if you're using something else. This does not apply to the
 deployed Vercel app - production builds don't have this restriction.
 
-## How the guardrail flag works here
+## Two independent layers in front of every tool call
 
-`app/api/chat/route.ts` passes a `toolApproval` function to `streamText`:
-tools tiered `SAFE` in [`lib/risk-registry.ts`](lib/risk-registry.ts) (mirrors
-`x_elite/risk_registry.py`) run immediately; everything else (`trigger_alert`)
-triggers [`lib/guardrail.ts`](lib/guardrail.ts) - the same ambiguity check as
-the Python guardrail, reusing its exact system prompt - and returns a
-`user-approval` status with the blast-radius summary as the `reason`.
+`app/api/chat/route.ts`'s `toolApproval` function runs, in order, for
+**every** tool call - not just ones tiered risky:
 
-In the browser, that shows up as an amber approval card (`app/page.tsx`) with
-Proceed/Block buttons, driven by the AI SDK's native tool-approval UI state
-(`part.state === 'approval-requested'`, `addToolApprovalResponse`) rather than
-a hand-rolled banner - no custom protocol needed.
+1. **Classifier** ([`lib/classifier.ts`](lib/classifier.ts)) - a second,
+   smaller model (`CLASSIFIER_MODEL`, not `GENIEX_MODEL`) with no say in what
+   the agent calls next, only whether the call it already chose looks
+   malicious. A `MALICIOUS` verdict is a hard, automatic deny - no user
+   override - because the point is not trusting a single model's judgment
+   about its own actions. `SUSPICIOUS` forces a manual approval even for
+   tools tiered `SAFE`.
+2. **Ambiguity guardrail** ([`lib/guardrail.ts`](lib/guardrail.ts)) - runs
+   when a tool is tiered `CONFIRM_REQUIRED` in
+   [`lib/risk-registry.ts`](lib/risk-registry.ts) (mirrors
+   `x_elite/risk_registry.py`) or the classifier flagged `SUSPICIOUS`. Same
+   ambiguity check and system prompt as the Python guardrail, checking
+   whether the instruction that led here left scope, target, or
+   reversibility unclear.
+
+Both surface through the AI SDK's native tool-approval UI state
+(`part.state === 'approval-requested'` / `'output-denied'`,
+`addToolApprovalResponse`) in `app/page.tsx`'s trace panel - an amber card
+with Proceed/Block for manual approvals, a red badge with the classifier's
+own reasoning for automatic denials. No hand-rolled protocol.
+
+### The demo tools
+
+[`x_elite/mcp_server.py`](../x_elite/mcp_server.py) also exposes a small
+repo-cleanup tool set that recreates the shape of the incident this project
+is built around (an ambiguous "remove other branches" instruction resolved
+into deleting every *remote* branch, with no confirmation):
+
+- `list_branches` - `SAFE`
+- `delete_branch(name, scope)` - `CONFIRM_REQUIRED`, scoped to `local` or
+  `remote`
+- `wipe_repository()` - `CONFIRM_REQUIRED` and always classifier-flagged
+  `MALICIOUS`: no scope parameter, deletes every non-main branch on the
+  remote in one call
+
+Try **"clean up the other branches"** - vague enough that the model may
+reach for `wipe_repository`, which the classifier should catch and
+auto-deny before it "executes" (the tool is simulated - nothing is actually
+deleted).
 
 ## Caveats
 

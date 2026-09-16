@@ -86,7 +86,12 @@ function TraceRow({ entry, onApprove }: { entry: TraceEntry; onApprove: (id: str
         )}
 
         {part.state === 'output-denied' && (
-          <p className="text-xs text-destructive">Blocked by SignalGuard - not executed.</p>
+          <p className="text-xs text-destructive">
+            <Badge variant="destructive" className="mr-1.5">
+              {part.approval.isAutomatic ? 'Auto-blocked' : 'Blocked'}
+            </Badge>
+            {part.approval.reason ?? 'Not executed.'}
+          </p>
         )}
 
         {part.state === 'output-error' && (
@@ -121,9 +126,11 @@ export default function Chat() {
         <AlertDescription>
           Ambiguous instructions can silently resolve to the wrong scope - &quot;remove other
           branches&quot; meaning local when an agent executes it as remote, with no confirmation
-          before a destructive MCP tool call runs. Every tool call below is tiered SAFE or
-          CONFIRM_REQUIRED and logged in the trace panel, so a scope mismatch gets caught before
-          it executes, not after.
+          before a destructive MCP tool call runs. Every tool call goes through two independent
+          checks before it can execute: a separate, smaller classifier model that has no say in
+          what to call next (only whether the call looks malicious), and an ambiguity check on
+          anything not read-only. Try{' '}
+          <span className="font-mono text-foreground">clean up the other branches</span> below.
         </AlertDescription>
       </Alert>
 

@@ -11,4 +11,7 @@ TOOL_RISK = {
     "get_board_status": "SAFE",
     "flash_heart": "SAFE",
     "trigger_alert": "CONFIRM_REQUIRED",
+    "list_branches": "SAFE",
+    "delete_branch": "CONFIRM_REQUIRED",
+    "wipe_repository": "CONFIRM_REQUIRED",
 }

@@ -8,6 +8,9 @@ export const TOOL_RISK: Record<string, RiskTier> = {
   get_board_status: 'SAFE',
   flash_heart: 'SAFE',
   trigger_alert: 'CONFIRM_REQUIRED',
+  list_branches: 'SAFE',
+  delete_branch: 'CONFIRM_REQUIRED',
+  wipe_repository: 'CONFIRM_REQUIRED',
 };
 
 // Unknown tool names default to the safest posture, not to SAFE.

@@ -10,6 +10,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { riskTier } from '@/lib/risk-registry';
 import { assessGuardrail } from '@/lib/guardrail';
+import { classifyToolCall } from '@/lib/classifier';
 
 export const maxDuration = 60;
 
@@ -40,8 +41,15 @@ export async function POST(req: Request) {
     process.env.GENIEX_MODEL ?? 'qualcomm/Qwen3-4B-Instruct-2507',
   );
 
-  // FastMCP on the Arduino Uno Q, reached through a second tunnel (its ADB
-  // forward is only reachable on the Snapdragon machine's own localhost).
+  // A second, smaller, independent model used only for classification - see
+  // lib/classifier.ts for why this is deliberately not the same model as
+  // `model` above. Needs its own `geniex pull` (see web/README.md).
+  const classifierModel = geniex.chatModel(
+    process.env.CLASSIFIER_MODEL ?? 'ai-hub-models/Qwen3-0.6B',
+  );
+
+  // x_elite/mcp_server.py, reached through a tunnel since this route runs
+  // on Vercel, not on the Snapdragon machine itself.
   const mcpClient = await createMCPClient({
     transport: { type: 'http', url: process.env.MCP_URL! },
   });
@@ -56,26 +64,47 @@ export async function POST(req: Request) {
     providerOptions: {
       geniex: { enable_think: false },
     },
-    // Same policy as x_elite/client.py's guarded call site: SAFE tools run
-    // immediately, everything else gets a guardrail check whose summary
-    // surfaces as the approval request's reason in the chat UI.
+    // Two independent layers, run for every tool call regardless of the
+    // static risk tier - a step doesn't get to skip review just because
+    // it's labeled SAFE in risk-registry.ts:
+    //
+    // 1. classifyToolCall (lib/classifier.ts) - a separate, smaller model
+    //    with no say in what to call next, only whether this call looks
+    //    malicious. MALICIOUS is a hard, automatic deny - no user override,
+    //    since the whole point is not to trust a single model's judgment.
+    // 2. assessGuardrail (lib/guardrail.ts) - the existing ambiguity check
+    //    on tools tiered CONFIRM_REQUIRED, or on anything the classifier
+    //    flagged SUSPICIOUS even if statically tiered SAFE.
     toolApproval: async ({ toolCall, messages: stepMessages }) => {
+      const userText = lastUserText(stepMessages);
+
+      const classification = await classifyToolCall(
+        classifierModel,
+        toolCall.toolName,
+        toolCall.input,
+        userText,
+      );
+
+      if (classification.verdict === 'MALICIOUS') {
+        return {
+          type: 'denied',
+          reason: `Blocked by independent classifier: ${classification.reason}`,
+        };
+      }
+
       const tier = riskTier(toolCall.toolName);
-      if (tier === 'SAFE') {
+      if (tier === 'SAFE' && classification.verdict === 'SAFE') {
         return 'not-applicable';
       }
 
-      const check = await assessGuardrail(
-        model,
-        lastUserText(stepMessages),
-        toolCall.toolName,
-        toolCall.input,
-      );
-      const label = check.ambiguous ? 'AMBIGUOUS INSTRUCTION' : 'CONFIRM PHYSICAL ACTION';
+      const check = await assessGuardrail(model, userText, toolCall.toolName, toolCall.input);
+      const label = check.ambiguous ? 'AMBIGUOUS INSTRUCTION' : 'CONFIRM ACTION';
+      const classifierNote =
+        classification.verdict === 'SUSPICIOUS' ? ` [classifier: SUSPICIOUS - ${classification.reason}]` : '';
       const reason =
-        check.ambiguous && check.ambiguity_reason
+        (check.ambiguous && check.ambiguity_reason
           ? `${label}: ${check.blast_radius_summary} (${check.ambiguity_reason})`
-          : `${label}: ${check.blast_radius_summary}`;
+          : `${label}: ${check.blast_radius_summary}`) + classifierNote;
 
       return { type: 'user-approval', reason };
     },
