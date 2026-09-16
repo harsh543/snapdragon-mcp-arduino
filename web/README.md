@@ -53,7 +53,7 @@ different ports, so each needs its own tunnel:
    vercel env add GENIEX_URL production
    vercel env add MCP_URL production
    vercel env add GENIEX_MODEL production   # e.g. qualcomm/Qwen3-4B-Instruct-2507
-   vercel env add CLASSIFIER_MODEL production   # e.g. qualcomm/Qwen3-0.6B
+   vercel env add CLASSIFIER_MODEL production   # e.g. ai-hub-models/Qwen3-0.6B
    vercel env add TOOL_APPROVAL_SECRET production   # openssl rand -base64 32
    ```
 
