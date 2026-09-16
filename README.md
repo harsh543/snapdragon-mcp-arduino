@@ -21,11 +21,14 @@ Qwen 3 / GenieX -> Python chat client -> MCP over ADB
                  -> FastMCP on Uno Q -> Arduino RPC -> MCU
 ```
 
-The example exposes two tools:
+The example exposes three tools:
 
 - `get_board_status` returns board information and calls `mcu_ping` on the MCU.
   The built-in LED blinks three times so the status check is physically visible.
 - `flash_heart` plays one heart animation on the LED matrix.
+- `trigger_alert(target, duration_ms)` strobes an alert pattern, scoped by
+  `target` (`"local"` = built-in LED only, `"all"` = LED matrix too). This
+  tool is gated by SignalGuard below because its scope is easy to get wrong.
 
 ## Repository layout
 
@@ -191,6 +194,97 @@ Optional settings:
   retrying `flash_heart`.
 - **Python import error on Uno Q:** start the server from
   `/home/arduino/local_dev` with `python -m arduino.unoq.mcp_server`.
+
+## SignalGuard: an MCP tool-call safety gate
+
+This fork adds a safety gate that intercepts risky, ambiguous tool calls
+before they execute on real hardware - the failure mode where an agent
+misresolves an ambiguous instruction into a wide-blast-radius action with
+no confirmation.
+
+```text
+x_elite/risk_registry.py   Static SAFE / CONFIRM_REQUIRED tier per tool name
+x_elite/guardrail.py       Async check that summarizes blast radius and flags
+                           ambiguity, reusing the same GenieX client/model
+                           already open in x_elite/client.py
+x_elite/client.py          One call site wrapped: SAFE tools run immediately,
+                           everything else prints a blast-radius summary and
+                           requires a "y" confirmation
+```
+
+Unknown tool names default to `CONFIRM_REQUIRED`, not `SAFE`. Any guardrail
+error (timeout, malformed JSON) also fails closed to `CONFIRM_REQUIRED` -
+never a silent allow.
+
+### Testing SignalGuard
+
+1. Bring the stack up exactly as in steps 1-5 above (GenieX serving, FastMCP
+   on the Uno Q, ADB port-forward), then start the client.
+2. **Safe path (unchanged behavior):**
+   ```text
+   You: Check whether the Arduino is connected.
+   ```
+   `get_board_status` is `SAFE`, so it should run immediately with no prompt -
+   confirms the guardrail adds zero friction to safe actions.
+3. **Ambiguous scope, caught:**
+   ```text
+   You: trigger the alert
+   ```
+   No scope was specified, so the model has to guess `target`. You should see:
+   ```text
+   [guardrail] AMBIGUOUS INSTRUCTION: <one-sentence blast-radius summary>
+   [guardrail] Why flagged: <reason>
+   [guardrail] Proceed? [y/N]
+   ```
+   Answer `N` to confirm the call is blocked (`{"status": "blocked_by_guardrail"}`
+   and nothing happens on the board); answer `y` to confirm it then executes.
+4. **Unambiguous scope, still confirmed:**
+   ```text
+   You: Flash the alert on just the built-in LED for one second.
+   ```
+   `ambiguous` should come back `false` with a plain confirmation prompt
+   instead of an ambiguity warning - the tier still requires a `y`, but the
+   framing differs.
+5. **Latency check before a live demo:** with a warm `geniex serve`, time how
+   long the guardrail prompt takes to appear after step 3's instruction. If
+   it's slow, trim `SYSTEM_PROMPT` in `x_elite/guardrail.py` - don't add a
+   timeout that silently skips the check; that would turn a fail-closed gate
+   into a fail-open one.
+
+### Note on `trigger_alert`'s Arduino registration
+
+`Bridge.provide("trigger_alert", trigger_alert)` registers a two-argument
+`(String, int)` handler, following the same pattern as the existing
+zero-argument `flash_heart`/`mcu_ping` handlers. This repository's existing
+handlers are all zero-argument, so if `arduino-cli compile` reports a type
+mismatch for the new handler, check the installed `Arduino_RouterBridge`
+version's supported parameter types and adjust the signature accordingly.
+
+## Vision: local VLM inference with the GenieX Python SDK
+
+`x_elite/vision.py` is a separate, standalone path that uses the GenieX
+Python SDK directly (`from geniex import AutoModelForCausalLM`) rather than
+the OpenAI-compatible `geniex serve` endpoint `x_elite/client.py` talks to.
+It loads a vision-language model in-process and describes an image - useful
+for a "camera sees something, then decide whether to act" demo.
+
+It requires a VL-capable model, which is a separate pull from the text-only
+model used elsewhere in this README:
+
+```powershell
+geniex pull ai-hub-models/Qwen2.5-VL-7B-Instruct
+```
+
+Run standalone against a captured frame:
+
+```powershell
+.\.venv\Scripts\python -m x_elite.vision --image path\to\frame.jpg
+```
+
+To combine perception with the guarded action loop, run `vision.py` first,
+then paste its printed description (or a follow-up instruction based on it,
+e.g. "given what you saw, trigger a local alert") into the `x_elite.client`
+prompt - `trigger_alert` still goes through SignalGuard either way.
 
 ## Upstream reuse
 

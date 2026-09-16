@@ -11,6 +11,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from openai import AsyncOpenAI
 
+from x_elite.guardrail import assess
+from x_elite.risk_registry import TOOL_RISK
+
 DEFAULT_MODEL = "qualcomm/Qwen3-4B-Instruct-2507"
 SYSTEM_PROMPT = (
     "You are an assistant that can interact with an Arduino Uno Q "
@@ -61,10 +64,26 @@ async def chat_turn(client, model_name, session, tools, history, user_text):
         return answer
 
     call = message.tool_calls[0]
+    tool_name = call.function.name
     arguments = json.loads(call.function.arguments or "{}")
-    print(f"[tool] {call.function.name}({json.dumps(arguments)})")
-    result = await session.call_tool(call.function.name, arguments)
-    result_text = tool_result_text(result)
+    print(f"[tool] {tool_name}({json.dumps(arguments)})")
+
+    tier = TOOL_RISK.get(tool_name, "CONFIRM_REQUIRED")  # unknown tools default to safe posture
+    if tier == "SAFE":
+        result = await session.call_tool(tool_name, arguments)
+        result_text = tool_result_text(result)
+    else:
+        check = await assess(client, model_name, user_text, tool_name, arguments)
+        label = "AMBIGUOUS INSTRUCTION" if check["ambiguous"] else "CONFIRM PHYSICAL ACTION"
+        print(f"\n[guardrail] {label}: {check['blast_radius_summary']}")
+        if check["ambiguous"] and check["ambiguity_reason"]:
+            print(f"[guardrail] Why flagged: {check['ambiguity_reason']}")
+        confirm = (await asyncio.to_thread(input, "[guardrail] Proceed? [y/N] ")).strip().lower()
+        if confirm == "y":
+            result = await session.call_tool(tool_name, arguments)
+            result_text = tool_result_text(result)
+        else:
+            result_text = json.dumps({"status": "blocked_by_guardrail"})
     print(f"[result] {result_text}")
 
     history.append({

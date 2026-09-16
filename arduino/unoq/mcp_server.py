@@ -15,11 +15,11 @@ mcp = FastMCP("Arduino Uno Q")
 socket_path = ROUTER_SOCKET
 
 
-def call_mcu(method: str):
+def call_mcu(method: str, *params):
     """Make one RPC call and always release the router socket."""
     bridge = ArduinoBridge(socket_path)
     try:
-        return bridge.call(method)
+        return bridge.call(method, *params)
     finally:
         bridge.close()
 
@@ -106,6 +106,25 @@ def flash_heart() -> dict:
     if response != 1:
         raise RuntimeError(f"Unexpected MCU response: {response!r}")
     return {"ok": True, "rpc_response": response}
+
+
+@mcp.tool
+def trigger_alert(target: str = "local", duration_ms: int = 1000) -> dict:
+    """Trigger a visible alert pattern on the Arduino Uno Q.
+
+    Scope matters: "local" flashes only the built-in LED; "all" also
+    strobes the LED matrix and is more disruptive. Use the smallest scope
+    that satisfies the request, and ask the user to clarify scope if it
+    was not specified.
+    """
+    if target not in ("local", "all"):
+        raise ValueError(f"target must be 'local' or 'all', got {target!r}")
+    if not 0 < duration_ms <= 10000:
+        raise ValueError("duration_ms must be between 1 and 10000")
+    response = call_mcu("trigger_alert", target, duration_ms)
+    if response != 1:
+        raise RuntimeError(f"Unexpected MCU response: {response!r}")
+    return {"ok": True, "target": target, "duration_ms": duration_ms, "rpc_response": response}
 
 
 def main():

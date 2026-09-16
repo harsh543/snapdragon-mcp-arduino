@@ -27,6 +27,31 @@ const char* mcu_ping() {
   return "pong";
 }
 
+// Scope-sensitive alert: "local" strobes only the built-in LED, "all" also
+// strobes the LED matrix. The scope parameter is the point of this tool,
+// not the visual effect - it stands in for any action whose blast radius
+// depends on a target the model can get wrong.
+int trigger_alert(String target, int duration_ms) {
+  bool all_leds = (target == "all");
+  unsigned long deadline = millis() + (unsigned long)duration_ms;
+
+  while (millis() < deadline) {
+    digitalWrite(STATUS_LED, HIGH);
+    if (all_leds) {
+      matrix.loadFrame(HeartStatic);
+    }
+    delay(75);
+    digitalWrite(STATUS_LED, LOW);
+    if (all_leds) {
+      matrix.clear();
+    }
+    delay(75);
+  }
+
+  matrix.loadFrame(HeartStatic);
+  return 1;
+}
+
 void setup() {
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW);
@@ -44,6 +69,7 @@ void setup() {
 
   Bridge.provide("flash_heart", flash_heart);
   Bridge.provide("mcu_ping", mcu_ping);
+  Bridge.provide("trigger_alert", trigger_alert);
 }
 
 void loop() {
