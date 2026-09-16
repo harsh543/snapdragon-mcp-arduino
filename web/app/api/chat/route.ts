@@ -126,6 +126,18 @@ export async function POST(req: Request) {
   });
 
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+    stream: toUIMessageStream({
+      stream: result.stream,
+      // AI SDK masks errors as a generic "An error occurred" by default.
+      // Surfacing the real message here so it's actually debuggable in the
+      // UI's error banner instead of a dead end.
+      onError: error => {
+        console.error('[chat route error]', error);
+        if (error == null) return 'Unknown error';
+        if (typeof error === 'string') return error;
+        if (error instanceof Error) return error.message;
+        return JSON.stringify(error);
+      },
+    }),
   });
 }
