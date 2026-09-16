@@ -138,7 +138,15 @@ export async function POST(req: Request) {
 
       const tier = riskTier(toolCall.toolName);
       if (tier === 'SAFE' && classification.verdict === 'SAFE') {
-        return 'not-applicable';
+        // Still returns a real reason, not 'not-applicable' - that skipped
+        // creating any approval record at all, so the trace panel showed
+        // nothing for the fast path: no badge, no explanation, just
+        // silence. Every tool call should show why it was let through, not
+        // just the ones that got flagged.
+        return {
+          type: 'approved',
+          reason: classification.reason || 'Classifier found no risk indicators.',
+        };
       }
 
       const check = await assessGuardrail(model, userText, toolCall.toolName, toolCall.input);
