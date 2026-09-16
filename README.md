@@ -54,6 +54,47 @@ geniex serve
 Keep `geniex serve` running. It provides the local OpenAI-compatible API at
 `http://127.0.0.1:18181/v1`.
 
+### GenieX CLI cheat sheet
+
+Useful commands beyond the two above, in the order you'll actually reach for
+them while testing this repo:
+
+```powershell
+# See what's already cached locally
+geniex list
+
+# Sanity-test a model completely standalone, before wiring up MCP at all.
+# --compute npu forces Hexagon NPU execution instead of a silent GPU/CPU
+# fallback - if this doesn't run on NPU, nothing downstream will either.
+geniex infer ai-hub-models/Qwen3-4B --compute npu -p "What is 2+2?"
+
+# Pull the vision-language model x_elite/vision.py needs (separate from
+# the text-only model used everywhere else in this README)
+geniex pull ai-hub-models/Qwen2.5-VL-7B-Instruct
+
+# Test that VLM standalone via CLI before going through vision.py
+geniex infer ai-hub-models/Qwen2.5-VL-7B-Instruct -p "Describe this image" path\to\frame.jpg
+
+# Objective latency numbers instead of eyeballing it live (see
+# "Latency check" in Testing SignalGuard below)
+geniex-bench --plugin qairt -m ai-hub-models/Qwen3-4B --device npu -p 512 -n 128
+
+# See everything downloaded and its size, or free up space
+geniex list
+geniex remove <model-name>
+geniex clean
+```
+
+**Precision notes:**
+- AI Hub bundles (`ai-hub-models/...`, loaded with `device_map="qairt"`) are
+  pre-quantized - there's no runtime choice, and most use `w4a16`.
+- GGUF models (loaded with `device_map="auto"` via llama.cpp) only reach the
+  Hexagon NPU at **`Q4_0`** quantization. `Q8_0` and `F16` silently run on
+  GPU/CPU instead - still correct, just not the on-device story this repo
+  demonstrates.
+- `geniex pull <model-name>[:<precision>]` accepts a precision tag directly
+  where a hub source offers more than one quantization.
+
 ## 2. Put the Arduino files on the Uno Q
 
 
@@ -250,6 +291,23 @@ never a silent allow.
    it's slow, trim `SYSTEM_PROMPT` in `x_elite/guardrail.py` - don't add a
    timeout that silently skips the check; that would turn a fail-closed gate
    into a fail-open one.
+
+**Troubleshooting the guardrail specifically:**
+
+- **Guardrail always says "Could not verify this action automatically" (the
+  generic fail-closed message):** the model isn't returning clean JSON.
+  `guardrail.py` passes `extra_body={"enable_think": False, "enable_json": True}`
+  to force JSON-only output, mirroring the GenieX CLI's `--enable-json` flag -
+  but this is unconfirmed on the served HTTP endpoint. If it's being ignored,
+  remove `"enable_json": True` and instead tighten `SYSTEM_PROMPT` in
+  `x_elite/guardrail.py` to repeat "respond with JSON only" more forcefully,
+  or try a larger model (a 0.6B model is more likely to wrap JSON in prose
+  than a 4B one).
+- **Every call to `trigger_alert` gets flagged ambiguous, even with an
+  explicit scope:** check the actual `tool_args` being passed by printing
+  `arguments` in `x_elite/client.py` before the guardrail runs - the model
+  may be omitting `target` even when you specified it in plain English,
+  which is a prompt/model issue, not a guardrail bug.
 
 ### Note on `trigger_alert`'s Arduino registration
 

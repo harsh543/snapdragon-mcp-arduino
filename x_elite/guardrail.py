@@ -40,7 +40,11 @@ async def assess(client, model_name: str, user_instruction: str, tool_name: str,
             ],
             temperature=0,
             max_tokens=256,
-            extra_body={"enable_think": False},
+            # enable_json mirrors the GenieX CLI's --enable-json flag by analogy
+            # with enable_think below; unconfirmed on the served HTTP endpoint -
+            # if guardrail checks start failing to parse, remove it and see the
+            # README's SignalGuard troubleshooting note.
+            extra_body={"enable_think": False, "enable_json": True},
         )
         content = response.choices[0].message.content or ""
         result = json.loads(content)
