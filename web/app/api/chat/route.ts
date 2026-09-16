@@ -163,7 +163,15 @@ export async function POST(req: Request) {
     // Cryptographically binds approvals to this server - see the Security
     // Considerations note in the SignalGuard README section. Optional: if
     // TOOL_APPROVAL_SECRET is unset, approvals still work, just unsigned.
-    experimental_toolApprovalSecret: process.env.TOOL_APPROVAL_SECRET,
+    //
+    // `|| undefined` matters: the AI SDK checks `secret == null` to decide
+    // whether signing is "configured" - an empty string fails that check
+    // (it's not null/undefined) and gets treated as a real secret, which
+    // then crashes importing a zero-byte HMAC key with exactly
+    // `DataError: Zero-length key is not supported`. .env.example ships
+    // this var blank by default, so this guard is load-bearing, not
+    // defensive-for-show.
+    experimental_toolApprovalSecret: process.env.TOOL_APPROVAL_SECRET || undefined,
     // Deliberately NOT awaited: this runs on every single request, and an
     // awaited close() that hangs or throws would block the stream from ever
     // finishing - freezing the chat input after exactly one prompt, every
