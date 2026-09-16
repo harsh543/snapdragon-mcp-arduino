@@ -72,6 +72,14 @@ npm install
 npm run dev
 ```
 
+If you tunnel straight to the local dev server (e.g. `ngrok http 3000` at the
+app itself, rather than only tunneling GenieX/MCP), Next.js will reject the
+request with "Blocked cross-origin request" - this is a dev-only protection
+against DNS rebinding, not a bug. `next.config.ts` already allowlists
+`*.ngrok-free.app`, `*.ngrok.io`, and `*.ngrok.app`; add your tunnel provider's
+domain there if you're using something else. This does not apply to the
+deployed Vercel app - production builds don't have this restriction.
+
 ## How the guardrail flag works here
 
 `app/api/chat/route.ts` passes a `toolApproval` function to `streamText`:
