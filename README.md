@@ -4,7 +4,66 @@ This repository is a small, local example of a Qwen 3 model running through
 Qualcomm AI Hub GenieX on a Snapdragon X Elite and calling functions on an
 Arduino Uno Q through MCP.
 
-## Quick start
+## Fastest path: everything local, no Arduino, no tunnels
+
+Three terminals, all on the same Windows Snapdragon X Elite machine. This
+uses [`x_elite/mcp_server.py`](#running-the-mcp-server-standalone-no-arduino)
+instead of the Arduino Uno Q, and the web chat instead of the CLI client.
+
+**Terminal 1 - GenieX (the model)**
+
+```powershell
+geniex serve
+```
+
+Leave this running. Confirms at `http://127.0.0.1:18181`.
+
+**Terminal 2 - the Python MCP tool server**
+
+```powershell
+cd path\to\snapdragon-mcp-arduino
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r x_elite/requirements.txt
+python -m x_elite.mcp_server
+```
+
+Leave this running too. It listens on `127.0.0.1:3001/mcp` and prints
+`[simulated] ...` lines whenever a tool actually executes.
+
+**Terminal 3 - the web chat**
+
+```powershell
+cd path\to\snapdragon-mcp-arduino\web
+git pull
+Copy-Item .env.example .env.local -Force
+```
+
+Edit `.env.local` (`notepad .env.local`) so it reads:
+
+```
+GENIEX_URL=http://127.0.0.1:18181/v1
+MCP_URL=http://127.0.0.1:3001/mcp
+GENIEX_MODEL=qualcomm/Qwen3-4B-Instruct-2507
+```
+
+Save, then:
+
+```powershell
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. Try `Check whether the Arduino is connected`
+(should answer immediately, no approval prompt - it's a `SAFE` tool) and
+`trigger the alert` (should show an amber approval card with a blast-radius
+summary and Proceed/Block buttons - it's `CONFIRM_REQUIRED`).
+
+See [`web/README.md`](web/README.md) for the tunneled, Vercel-deployed
+version of the same chat UI, and the Arduino-based path below if you do have
+the physical Uno Q.
+
+## Quick start (with the physical Arduino Uno Q)
 
 1. Start GenieX: `geniex pull qualcomm/Qwen3-4B-Instruct-2507`, then
    `geniex serve`.
