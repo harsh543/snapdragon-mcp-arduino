@@ -75,14 +75,23 @@ geniex pull ai-hub-models/Qwen2.5-VL-7B-Instruct
 # Test that VLM standalone via CLI before going through vision.py
 geniex infer ai-hub-models/Qwen2.5-VL-7B-Instruct -p "Describe this image" path\to\frame.jpg
 
-# Objective latency numbers instead of eyeballing it live (see
-# "Latency check" in Testing SignalGuard below)
-geniex-bench --plugin qairt -m ai-hub-models/Qwen3-4B --device npu -p 512 -n 128
-
 # See everything downloaded and its size, or free up space
 geniex list
 geniex remove <model-name>
 geniex clean
+```
+
+**`geniex-bench` (objective latency numbers, see "Latency check" in Testing
+SignalGuard below) is a separate standalone binary, not bundled with the
+CLI or added to PATH** - download and run it from the extracted folder:
+
+```powershell
+Invoke-WebRequest `
+  https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-geniex/geniex-bench-windows-arm64.zip `
+  -OutFile bench.zip
+Expand-Archive bench.zip -DestinationPath bench
+cd bench
+.\geniex-bench.exe --plugin qairt -m ai-hub-models/Qwen3-4B --device npu -p 512 -n 128
 ```
 
 **Precision notes:**
