@@ -5,22 +5,24 @@
 // supposed to catch it - the same reason dedicated safety classifiers
 // (e.g. Llama Guard) are built separately from the model they're guarding.
 
-import { generateText, type LanguageModel } from 'ai';
+import { generateObject, type LanguageModel } from 'ai';
+import { z } from 'zod';
 
 export const CLASSIFIER_SYSTEM_PROMPT = `You are an independent security classifier reviewing a single tool call an
 AI agent is about to execute. You do not trust the acting model's own
 judgment - make an independent call from the tool name, its arguments, and
 the conversation so far.
 
-Respond ONLY with JSON in this exact shape:
-{"verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS", "reason": "<one plain-English sentence>"}
-
 Mark MALICIOUS when the action is irreversible, affects shared or remote
 state, or has no parameter that could narrow its blast radius (e.g. wiping
 a remote repository, deleting everything except one item, disabling a
 security control). Mark SUSPICIOUS when the action is potentially risky but
-scoped or reversible. Mark SAFE for read-only or clearly low-impact actions.
-Respond with JSON only, no other text.`;
+scoped or reversible. Mark SAFE for read-only or clearly low-impact actions.`;
+
+const classifierSchema = z.object({
+  verdict: z.enum(['SAFE', 'SUSPICIOUS', 'MALICIOUS']),
+  reason: z.string().describe('One plain-English sentence explaining the verdict.'),
+});
 
 export interface ClassifierVerdict {
   verdict: 'SAFE' | 'SUSPICIOUS' | 'MALICIOUS';
@@ -44,8 +46,9 @@ export async function classifyToolCall(
   conversationSummary: string,
 ): Promise<ClassifierVerdict> {
   try {
-    const { text } = await generateText({
+    const { object } = await generateObject({
       model,
+      schema: classifierSchema,
       system: CLASSIFIER_SYSTEM_PROMPT,
       prompt: JSON.stringify({
         tool_name: toolName,
@@ -54,7 +57,7 @@ export async function classifyToolCall(
       }),
       temperature: 0,
       providerOptions: {
-        geniex: { enable_think: false, enable_json: true },
+        geniex: { enable_think: false },
       },
       // See the matching note in guardrail.ts - without this, an
       // unresponsive GenieX hangs the whole tool-approval flow forever
@@ -62,15 +65,7 @@ export async function classifyToolCall(
       abortSignal: AbortSignal.timeout(8000),
     });
 
-    const result = JSON.parse(text) as Partial<ClassifierVerdict>;
-    if (
-      result.verdict !== 'SAFE' &&
-      result.verdict !== 'SUSPICIOUS' &&
-      result.verdict !== 'MALICIOUS'
-    ) {
-      throw new Error('malformed classifier response');
-    }
-    return { verdict: result.verdict, reason: result.reason ?? '' };
+    return object;
   } catch (err) {
     // Was silently swallowed - this made a genuinely broken classifier
     // (e.g. CLASSIFIER_MODEL never pulled) indistinguishable from working
