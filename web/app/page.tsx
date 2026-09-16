@@ -114,6 +114,15 @@ export default function Chat() {
   // first two mean a request is actually in flight. Disabling on 'error'
   // too would lock the input with no way to retry and no visible reason.
   const busy = status === 'submitted' || status === 'streaming';
+  // status returns to 'ready' while a manual tool-approval card is waiting
+  // for you to click Proceed/Block - that's correct (you're not "busy"
+  // waiting on the server). But sending a new message in that window
+  // throws AI_MissingToolResultsError, since the previous tool call is
+  // still unresolved. Block sending until it's answered.
+  const hasPendingApproval = trace.some(
+    entry => entry.part.state === 'approval-requested' && !entry.part.approval.isAutomatic,
+  );
+  const canSend = !busy && !hasPendingApproval;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-6">
@@ -186,7 +195,7 @@ export default function Chat() {
               className="flex gap-2"
               onSubmit={e => {
                 e.preventDefault();
-                if (input.trim()) {
+                if (input.trim() && canSend) {
                   sendMessage({ text: input });
                   setInput('');
                 }
@@ -195,10 +204,14 @@ export default function Chat() {
               <Input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder="e.g. Check whether the Arduino is connected"
-                disabled={busy}
+                placeholder={
+                  hasPendingApproval
+                    ? 'Respond to the pending approval above first'
+                    : 'e.g. Check whether the Arduino is connected'
+                }
+                disabled={!canSend}
               />
-              <Button type="submit" disabled={busy || !input.trim()}>
+              <Button type="submit" disabled={!canSend || !input.trim()}>
                 Send
               </Button>
             </form>
