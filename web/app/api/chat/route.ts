@@ -53,7 +53,40 @@ export async function POST(req: Request) {
   const mcpClient = await createMCPClient({
     transport: { type: 'http', url: process.env.MCP_URL! },
   });
-  const tools = await mcpClient.tools();
+  const rawTools = await mcpClient.tools();
+
+  // mcpClient.tools() has no built-in per-call timeout - only the raw
+  // callTool() method does. Without this, a hung MCP server (tunnel
+  // dropped, server not running, server itself hanging) has no bound
+  // except the full-request abortSignal below. If THAT fires mid tool
+  // call, the call never gets a result and the chat history is left with
+  // a dangling, unresolved tool-call that will throw
+  // AI_MissingToolResultsError on every future message in this tab, since
+  // that validation runs on the client's own resent history, not just the
+  // current request - "hard refresh to fix it" is the correct remedy for
+  // an already-poisoned tab, but this stops it from happening again. A
+  // thrown error here becomes a clean tool-error output, which the AI SDK
+  // counts as fully resolved either way.
+  const MCP_CALL_TIMEOUT_MS = 10000;
+  const tools = Object.fromEntries(
+    Object.entries(rawTools).map(([name, tool]) => [
+      name,
+      {
+        ...tool,
+        execute: async (input: unknown, options: unknown) => {
+          const timeout = new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`MCP tool "${name}" did not respond within ${MCP_CALL_TIMEOUT_MS}ms`)),
+              MCP_CALL_TIMEOUT_MS,
+            ),
+          );
+          // @ts-expect-error - tool.execute's exact signature comes from the
+          // MCP SDK's generic McpToolBase type; passed through unchanged.
+          return Promise.race([tool.execute(input, options), timeout]);
+        },
+      },
+    ]),
+  );
 
   const modelMessages = await convertToModelMessages(messages);
 

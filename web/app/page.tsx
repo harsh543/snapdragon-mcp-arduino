@@ -83,7 +83,7 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
 }
 
 export default function Chat() {
-  const { messages, sendMessage, status, error, clearError } = useChat({
+  const { messages, sendMessage, setMessages, status, error, clearError } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
   const [input, setInput] = useState('');
@@ -97,12 +97,24 @@ export default function Chat() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">SignalGuard</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Qwen3 on a Snapdragon X Elite via GenieX, calling MCP tools with a safety gate in front of
-          anything not read-only.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">SignalGuard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Qwen3 on a Snapdragon X Elite via GenieX, calling MCP tools with a safety gate in front
+            of anything not read-only.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setMessages([]);
+            clearError();
+          }}
+        >
+          New chat
+        </Button>
       </div>
 
       {error && (
