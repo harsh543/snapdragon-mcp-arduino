@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   // lib/classifier.ts for why this is deliberately not the same model as
   // `model` above. Needs its own `geniex pull` (see web/README.md).
   const classifierModel = geniex.chatModel(
-    process.env.CLASSIFIER_MODEL ?? 'ai-hub-models/Qwen3-0.6B',
+    process.env.CLASSIFIER_MODEL ?? 'qualcomm/Qwen3-0.6B',
   );
 
   // x_elite/mcp_server.py, reached through a tunnel since this route runs
