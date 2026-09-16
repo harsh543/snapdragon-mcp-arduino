@@ -103,13 +103,17 @@ function TraceRow({ entry, onApprove }: { entry: TraceEntry; onApprove: (id: str
 }
 
 export default function Chat() {
-  const { messages, sendMessage, addToolApprovalResponse, status } = useChat({
+  const { messages, sendMessage, addToolApprovalResponse, status, error, clearError } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
   const [input, setInput] = useState('');
 
   const trace = useMemo(() => collectTrace(messages), [messages]);
+  // status is 'submitted' | 'streaming' | 'ready' | 'error' - only the
+  // first two mean a request is actually in flight. Disabling on 'error'
+  // too would lock the input with no way to retry and no visible reason.
+  const busy = status === 'submitted' || status === 'streaming';
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-6">
@@ -120,6 +124,18 @@ export default function Chat() {
           anything not read-only.
         </p>
       </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertTitle>Request failed</AlertTitle>
+          <AlertDescription className="flex items-center justify-between gap-4">
+            <span>{error.message || 'Something went wrong talking to the server.'}</span>
+            <Button size="sm" variant="outline" onClick={() => clearError()}>
+              Dismiss
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Alert>
         <AlertTitle>Why this exists</AlertTitle>
@@ -180,9 +196,9 @@ export default function Chat() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder="e.g. Check whether the Arduino is connected"
-                disabled={status !== 'ready'}
+                disabled={busy}
               />
-              <Button type="submit" disabled={status !== 'ready' || !input.trim()}>
+              <Button type="submit" disabled={busy || !input.trim()}>
                 Send
               </Button>
             </form>
